@@ -1,0 +1,250 @@
+// TicketSouq views.
+// 14 views transcribing docs/c4/* : system context (index) + containers + 12 component diagrams.
+// Fidelity notes:
+//  - Component views show only the edges present in the source component docs; the
+//    container-level routes / Feign / platform / data-store edges (containers.md) that are
+//    not repeated inside a component diagram are excluded from that component view.
+//  - The 'All Backend Services' box only exists in the config-server / discovery-server views.
+
+views {
+  // ============ C4 Level 1 — System Context ============
+  view index {
+    title 'C4 Level 1 — System Context'
+    description 'The TicketSouq backend as a black box: the users that interact with it and the external systems it depends on.'
+    include
+      customer,
+      admin,
+      ts,
+      stripe,
+      smtp
+  }
+
+  // ============ C4 Level 2 — Containers ============
+  view containers of ts {
+    title 'C4 Level 2 — Containers'
+    description 'The TicketSouq backend decomposed into deployable containers (microservices + infrastructure) and their communication.'
+    include
+      customer,
+      admin,
+      stripe,
+      smtp,
+      ts.*
+    exclude
+      ts.services,
+      ts.us -> ts.es,
+      ts.us -> ts.vs,
+      ts.us -> ts.au,
+      ts.us -> ts.an,
+      ts.vs -> ts.es,
+      ts.es -> ts.tk,
+      ts.es -> ts.ns
+  }
+
+  // ============ C4 Level 3 — Component diagrams ============
+
+  // --- API Gateway (docs/c4/components/api-gateway.md) ---
+  view apiGateway of ts.gw {
+    title 'C4 Level 3 — API Gateway Components'
+    include
+      customer,
+      ts.gw.*,
+      ts.auth_db,
+      ts.redis,
+      ts.kafka,
+      ts.us
+    exclude
+      ts.gw -> ts.us,
+      ts.us -> ts.gw,
+      ts.us -> ts.kafka,
+      ts.gw -> ts.auth_db
+    include
+      ts.gw.user_client -> ts.us
+  }
+
+  // --- Config Server (docs/c4/components/config-server.md) ---
+  view configServer of ts.cs {
+    title 'C4 Level 3 — Config Server Components'
+    include
+      ts.cs.*,
+      ts.gw,
+      ts.services
+  }
+
+  // --- Discovery Server (docs/c4/components/discovery-server.md) ---
+  view discoveryServer of ts.ds {
+    title 'C4 Level 3 — Discovery Server Components'
+    include
+      ts.ds.*,
+      ts.services
+  }
+
+  // --- User Service (docs/c4/components/user-service.md) ---
+  view userService of ts.us {
+    title 'C4 Level 3 — User Service Components'
+    include
+      ts.us.*,
+      ts.user_db,
+      ts.kafka,
+      ts.gw,
+      ts.es,
+      ts.vs,
+      ts.au,
+      ts.an
+    exclude
+      ts.us -> ts.gw,
+      ts.gw -> ts.us,
+      ts.es -> ts.us,
+      ts.vs -> ts.us,
+      ts.au -> ts.us,
+      ts.an -> ts.us,
+      ts.us -> ts.user_db,
+      ts.gw -> ts.kafka,
+      ts.es -> ts.kafka,
+      ts.au -> ts.kafka,
+      ts.an -> ts.kafka,
+      ts.gw -> ts.es,
+      ts.gw -> ts.vs,
+      ts.gw -> ts.au,
+      ts.gw -> ts.an,
+      ts.vs -> ts.es
+    include
+      ts.us.auth_client -> ts.gw
+  }
+
+  // --- Event Service (docs/c4/components/event-service.md) ---
+  view eventService of ts.es {
+    title 'C4 Level 3 — Event Service Components'
+    include
+      ts.es.*,
+      ts.event_db,
+      ts.elastic,
+      ts.kafka,
+      ts.us,
+      ts.tk,
+      ts.ns
+    exclude
+      ts.es -> ts.us,
+      ts.tk -> ts.es,
+      ts.ns -> ts.es,
+      ts.es -> ts.event_db,
+      ts.es -> ts.elastic,
+      ts.us -> ts.kafka,
+      ts.tk -> ts.kafka,
+      ts.ns -> ts.kafka
+    include
+      ts.es.user_client -> ts.us
+  }
+
+  // --- Venue Service (docs/c4/components/venue-service.md) ---
+  view venueService of ts.vs {
+    title 'C4 Level 3 — Venue Service Components'
+    include
+      ts.vs.*,
+      ts.venue_db,
+      ts.us,
+      ts.es
+    exclude
+      ts.vs -> ts.us,
+      ts.es -> ts.us,
+      ts.us -> ts.es,
+      ts.vs -> ts.venue_db
+    include
+      ts.vs.user_client -> ts.us
+  }
+
+  // --- Ticket Service (docs/c4/components/ticket-service.md) ---
+  view ticketService of ts.tk {
+    title 'C4 Level 3 — Ticket Service Components'
+    include
+      ts.tk.*,
+      ts.ticket_db,
+      ts.kafka,
+      ts.es
+    exclude
+      ts.tk -> ts.es,
+      ts.es -> ts.kafka,
+      ts.tk -> ts.ticket_db
+    include
+      ts.tk.event_client -> ts.es
+  }
+
+  // --- Reservation Service (docs/c4/components/reservation-service.md) ---
+  view reservationService of ts.rs {
+    title 'C4 Level 3 — Reservation Service Components'
+    include
+      ts.rs.*,
+      ts.reservation_db,
+      ts.kafka,
+      ts.es,
+      ts.ns
+    exclude
+      ts.es -> ts.kafka,
+      ts.ns -> ts.kafka,
+      ts.ns -> ts.es,
+      ts.es -> ts.ns,
+      ts.rs -> ts.reservation_db
+  }
+
+  // --- Payment Service (docs/c4/components/payment-service.md) ---
+  view paymentService of ts.ps {
+    title 'C4 Level 3 — Payment Service Components'
+    include
+      ts.ps.*,
+      ts.payment_db,
+      ts.kafka,
+      stripe
+    exclude ts.ps -> ts.payment_db
+  }
+
+  // --- Notification Service (docs/c4/components/notification-service.md) ---
+  view notificationService of ts.ns {
+    title 'C4 Level 3 — Notification Service Components'
+    include
+      ts.ns.*,
+      ts.notification_db,
+      ts.kafka,
+      ts.es,
+      smtp
+    exclude
+      ts.ns -> ts.es,
+      ts.es -> ts.kafka,
+      ts.ns -> ts.kafka,
+      ts.ns -> ts.notification_db
+    include
+      ts.ns.event_client -> ts.es
+  }
+
+  // --- Audit Service (docs/c4/components/audit-service.md) ---
+  view auditService of ts.au {
+    title 'C4 Level 3 — Audit Service Components'
+    include
+      ts.au.*,
+      ts.audit_db,
+      ts.kafka,
+      ts.us
+    exclude
+      ts.au -> ts.us,
+      ts.us -> ts.kafka,
+      ts.au -> ts.kafka,
+      ts.au -> ts.audit_db
+    include
+      ts.au.user_client -> ts.us
+  }
+
+  // --- Analytics Service (docs/c4/components/analytics-service.md) ---
+  view analyticsService of ts.an {
+    title 'C4 Level 3 — Analytics Service Components'
+    include
+      ts.an.*,
+      ts.analytics_db,
+      ts.kafka,
+      ts.us
+    exclude
+      ts.an -> ts.us,
+      ts.us -> ts.kafka,
+      ts.an -> ts.kafka,
+      ts.an -> ts.analytics_db
+    include
+      ts.an.user_client -> ts.us
+  }
+}

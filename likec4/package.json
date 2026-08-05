@@ -1,0 +1,18 @@
+{
+  "name": "ticketsouq-likec4",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TicketSouq C4 architecture model rendered with LikeC4",
+  "scripts": {
+    "dev": "likec4 serve",
+    "build": "likec4 build -o dist",
+    "preview": "likec4 preview -o dist",
+    "validate": "likec4 validate",
+    "format": "likec4 format",
+    "export": "likec4 export png -o assets"
+  },
+  "devDependencies": {
+    "likec4": "^1.59.2"
+  }
+}

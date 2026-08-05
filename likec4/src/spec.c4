@@ -1,0 +1,31 @@
+// LikeC4 specification: custom element kinds and their default styling.
+// Equivalent to the "Notation" section of the C4 model (docs/c4/README.md).
+
+specification {
+  // People: shape is a person silhouette
+  element actor {
+    style {
+      shape person
+    }
+  }
+
+  // Systems (internal and external)
+  element system
+
+  // Microservices / deployable units
+  element component
+
+  // Databases and caches (PostgreSQL, Redis, Elasticsearch)
+  element storage {
+    style {
+      shape storage
+    }
+  }
+
+  // Message broker
+  element queue {
+    style {
+      shape queue
+    }
+  }
+}
