@@ -1,5 +1,6 @@
 // TicketSouq views.
-// 14 views transcribing docs/c4/* : system context (index) + containers + 12 component diagrams.
+// 14 views mirroring docs/c4/* : system context (index) + containers + 12 component diagrams,
+// synced against the TicketSouq backend source (2026).
 // Fidelity notes:
 //  - Component views show only the edges present in the source component docs; the
 //    container-level routes / Feign / platform / data-store edges (containers.md) that are

@@ -1,5 +1,6 @@
 // TicketSouq architecture model.
-// Transcribed from docs/c4/* (system context + containers + 12 component diagrams).
+// Synced against the TicketSouq backend source (2026) — see TicketSouq/*/src/main/java.
+// Mirrors docs/c4/* (system context + containers + 12 component diagrams).
 
 model {
   // ================= Actors =================
@@ -21,47 +22,43 @@ model {
 
       auth_ctl = component 'AuthController' {
         technology 'REST controller'
-        description '/api/v1/auth'
-      }
-      auth_priv = component 'AuthPrivateController' {
-        technology 'REST controller'
-        description '/api/v1/private/auth'
+        description '/api/v1/auth — register, login, refresh, logout, email/OTP verify, password reset/change, org-member mgmt, unlock-org'
       }
       auth_svc = component 'AuthService' {
-        description 'Login / register / verify / reset flows; publishes outbox events'
+        description 'Login / register / verify / reset / org-member / unlock flows; publishes outbox events'
       }
       token_svc = component 'AuthTokenService' {
-        description 'JWT + refresh token creation and validation'
+        description 'JWT access/refresh creation, rotation, session + OTP management'
       }
       user_client = component 'UserServiceClient' {
         technology 'Feign client -> user-service'
-        description 'POST /api/v1/private/user/*'
+        description 'GET/POST /api/v1/private/user/* (register, isbanned, generate-members, org/members)'
       }
       cred_repo = component 'AuthCredentialRepository' {
         technology 'Spring Data JPA'
-        description 'auth_credentials'
+        description 'auth_credential'
       }
       access_repo = component 'AccessTokenRepository' {
-        technology 'Spring Data JPA'
-        description 'access_tokens'
+        technology 'Redis (Lua scripts)'
+        description 'auth:jti:* / auth:user:* keysets (no JPA entity)'
       }
       refresh_repo = component 'RefreshTokenRepository' {
         technology 'Spring Data JPA'
-        description 'refresh_tokens'
+        description 'refresh_token'
       }
       routes = component 'RoutesConfig' {
         description 'Route definitions to all services /api/v1/<prefix>/**'
       }
       sec = component 'SecurityConfig + JwtAuthenticationFilter' {
-        description 'Security rules, JWT validation, header forwarding'
+        description 'Security-rule matrix, JWT validation, header forwarding'
       }
       rate = component 'RateLimitFilter' {
         technology 'Bucket4j'
-        description 'Rate limiting per-user buckets'
+        description 'Rate limiting per-IP token buckets'
       }
       cleaning = component 'CleaningJobs' {
         technology 'Scheduled jobs'
-        description 'Session / refresh-token / expired-org cleanup'
+        description 'Expired-account unlock, dead-session purge, refresh-token cleanup'
       }
       redis_cfg = component 'RedisConfig' {
         description 'Redis connection factory'
@@ -75,8 +72,10 @@ model {
         technology 'HTTPS'
       }
       auth_ctl -> auth_svc 'Delegates'
-      auth_priv -> auth_svc 'Delegates (private)'
       auth_svc -> token_svc 'Creates / validates tokens'
+      token_svc -> access_repo 'Reads/Writes' {
+        technology 'Redis'
+      }
       auth_svc -> user_client 'Registers, checks ban, generates members' {
         technology 'Feign'
       }
@@ -86,28 +85,25 @@ model {
       auth_svc -> cred_repo 'Reads/Writes' {
         technology 'JPA'
       }
-      auth_svc -> access_repo 'Reads/Writes' {
-        technology 'JPA'
-      }
       auth_svc -> refresh_repo 'Reads/Writes' {
         technology 'JPA'
       }
       auth_svc -> outbox 'Persists events' {
         technology 'JPA'
       }
-      outbox -> kafka 'Publishes auth events' {
+      outbox -> kafka 'Publishes user.*, accounts.generated, audit.event' {
         technology 'Kafka'
       }
-      cleaning -> cred_repo 'Unlocks expired orgs' {
+      cleaning -> cred_repo 'Unlocks expired accounts (1m)' {
         technology 'JPA'
       }
-      cleaning -> access_repo 'Cleans expired sessions' {
+      cleaning -> access_repo 'Purges dead sessions (2h)' {
+        technology 'Redis'
+      }
+      cleaning -> refresh_repo 'Cleans expired refresh tokens (daily)' {
         technology 'JPA'
       }
-      cleaning -> refresh_repo 'Cleans expired refresh tokens' {
-        technology 'JPA'
-      }
-      token_svc -> redis 'Stores session / tokens' {
+      token_svc -> redis 'Stores access tokens / OTPs' {
         technology 'Redis'
       }
     }
@@ -164,7 +160,7 @@ model {
         description 'User profiles, organization approval, members'
       }
       org_svc = component 'OrganizationService' {
-        description 'Org lifecycle; publishes org.status.changed'
+        description 'Org lifecycle; publishes org.status.changed + audit.event'
       }
       user_repo = component 'UserRepository' {
         technology 'Spring Data JPA'
@@ -172,11 +168,11 @@ model {
       }
       org_repo = component 'OrganizationRepository' {
         technology 'Spring Data JPA'
-        description 'organizations'
+        description 'organization'
       }
       member_repo = component 'OrgMemberRepository' {
         technology 'Spring Data JPA'
-        description 'org_members'
+        description 'org_member'
       }
       mapper = component 'UserMapper' {
         technology 'MapStruct'
@@ -184,7 +180,7 @@ model {
       }
       auth_client = component 'AuthServiceClient' {
         technology 'Feign client -> api-gateway'
-        description 'POST /api/v1/private/auth/unlock-org'
+        description 'POST /api/v1/auth/unlock-org'
       }
       outbox = component 'OutboxWriter (shared)' {
         technology 'ticketsouq-outbox'
@@ -222,7 +218,7 @@ model {
       priv_ctl -> vs 'Serves org lookups' {
         technology 'REST'
       }
-      priv_ctl -> au 'Serves emails' {
+      pub_ctl -> au 'Serves email lookup' {
         technology 'REST'
       }
       priv_ctl -> an 'Serves context' {
@@ -262,7 +258,7 @@ model {
       }
       event_consumer = component 'EventEventConsumer' {
         technology 'Kafka listener'
-        description 'saga.lock.confirm.command / compensate'
+        description 'saga.lock.confirm.command / saga.lock.confirm.compensate'
       }
       status_jobs = component 'EventStatusJobs' {
         technology 'Scheduled jobs'
@@ -306,7 +302,7 @@ model {
       }
       user_client = component 'UserServiceClient' {
         technology 'Feign client -> user-service'
-        description 'GET /api/v1/private/user/organization'
+        description 'GET /api/v1/private/user/organization, /name'
       }
       outbox = component 'OutboxWriter (shared)' {
         technology 'ticketsouq-outbox'
@@ -353,7 +349,7 @@ model {
       user_client -> us 'Calls' {
         technology 'REST'
       }
-      event_svc -> outbox 'Persists lifecycle events' {
+      event_svc -> outbox 'Persists event.created/activated/completed/cancelled, event.payout-released, organizer.reservation.*, audit.event' {
         technology 'JPA'
       }
       lock_svc -> outbox 'Persists reservation.begin' {
@@ -363,7 +359,7 @@ model {
         technology 'Kafka'
       }
       event_consumer -> lock_svc 'Confirms / compensates locks'
-      event_consumer -> outbox 'Persists lock replies' {
+      event_consumer -> outbox 'Persists saga.lock.confirm.reply' {
         technology 'JPA'
       }
       status_jobs -> lock_svc 'Expires stale locks'
@@ -376,6 +372,8 @@ model {
       status_sched -> event_repo 'Activates / completes events' {
         technology 'JPA'
       }
+      // Note: ticket-service's EventServiceClient calls /api/v1/events/{id} but
+      // this controller maps singular /api/v1/event/{id} (path mismatch in the code).
       event_ctl -> tk 'Serves event details to snapshot consumer' {
         technology 'REST'
       }
@@ -404,11 +402,11 @@ model {
       }
       venue_repo = component 'VenueRepository' {
         technology 'Spring Data JPA'
-        description 'venues'
+        description 'venue (soft delete)'
       }
       tpl_repo = component 'VenueTemplateRepository' {
         technology 'Spring Data JPA'
-        description 'venue_templates'
+        description 'venue_templates (layout as JSONB)'
       }
       venue_map = component 'VenueMapper' {
         technology 'MapStruct'
@@ -455,10 +453,6 @@ model {
         technology 'REST controller'
         description '/api/v1/ticket'
       }
-      ticket_priv = component 'TicketPrivateController' {
-        technology 'REST controller'
-        description '/api/v1/private/tickets'
-      }
       ticket_svc = component 'TicketService' {
         description 'Ticket creation, cancellation, status updates'
       }
@@ -491,6 +485,7 @@ model {
       }
       event_client = component 'EventServiceClient' {
         technology 'Feign client -> event-service'
+        // Path mismatch: client uses plural /api/v1/events/{id}; event-service maps singular /api/v1/event/{id}.
         description 'GET /api/v1/events/{id}'
       }
       metrics = component 'TicketMetrics' {
@@ -503,7 +498,6 @@ model {
       }
 
       ticket_ctl -> ticket_svc 'Delegates'
-      ticket_priv -> ticket_svc 'Delegates (private)'
       ticket_svc -> ticket_repo 'Reads/Writes' {
         technology 'JPA'
       }
@@ -566,10 +560,6 @@ model {
         technology 'MapStruct'
         description 'DTO mapping'
       }
-      metrics = component 'SagaMetrics' {
-        technology 'Micrometer'
-        description 'Counters'
-      }
       outbox = component 'OutboxWriter (shared)' {
         technology 'ticketsouq-outbox'
         description 'Transactional outbox'
@@ -597,7 +587,6 @@ model {
         technology 'JPA'
       }
       recovery -> orchestrator 'Re-drives compensation'
-      orchestrator -> metrics 'Increments counters'
       rs_svc -> mapper 'Maps DTOs'
       reply_consumer -> kafka_cfg 'Uses declared topics'
     }
@@ -606,15 +595,11 @@ model {
       technology 'Spring Boot REST + JPA + Stripe'
       description 'Payments, refunds, payouts'
 
-      webhook_ctl = component 'StripeWebhookController' {
-        technology 'REST webhook'
-        description '/api/v1/webhook (currently disabled)'
-      }
       payment_svc = component 'PaymentService' {
-        description 'Charges, refunds, payouts; publishes replies/events'
+        description 'Charges, refunds; publishes replies/events (Stripe webhook flow disabled)'
       }
       provider = component 'PaymentProvider (interface)' {
-        description 'StripePaymentProvider | MockPaymentProvider'
+        description 'StripePaymentProvider | MockPaymentProvider (mock default)'
       }
       cmd_consumer = component 'SagaPaymentCommandConsumer' {
         technology 'Kafka listener'
@@ -626,14 +611,10 @@ model {
       }
       payment_repo = component 'PaymentRepository' {
         technology 'Spring Data JPA'
-        description 'payments'
+        description 'payment_model'
       }
-      payout_repo = component 'PayoutRepository' {
-        technology 'Spring Data JPA'
-        description 'payouts'
-      }
-      payment_cfg = component 'PaymentConfig + StripeConfig' {
-        description 'Provider selection, Stripe keys'
+      payment_cfg = component 'PaymentConfig' {
+        description 'Provider selection (stripe | mock)'
       }
       metrics = component 'PaymentMetrics' {
         technology 'Micrometer'
@@ -653,10 +634,7 @@ model {
       payment_svc -> payment_repo 'Reads/Writes' {
         technology 'JPA'
       }
-      payment_svc -> payout_repo 'Reads/Writes' {
-        technology 'JPA'
-      }
-      payment_svc -> outbox 'Persists replies & events' {
+      payment_svc -> outbox 'Persists saga.payment.reply, payment.success/failed/refunded' {
         technology 'JPA'
       }
       outbox -> kafka 'Publishes' {
@@ -676,7 +654,7 @@ model {
       }
       consumer = component 'NotificationEventConsumer' {
         technology 'Kafka listener'
-        description 'user.*, payment.refunded, reservation.completed, org.status.changed'
+        description 'user.*, accounts.generated, payment.refunded, reservation.completed, org.status.changed'
       }
       notif_svc = component 'NotificationService (impl)' {
         description 'In-app notification CRUD'
@@ -707,7 +685,7 @@ model {
       }
       projection_repo = component 'UserEmailProjectionRepository' {
         technology 'Spring Data JPA'
-        description 'user_email_projections'
+        description 'user_email_projection'
       }
       mapper = component 'NotificationMapper' {
         technology 'MapStruct'
@@ -721,11 +699,7 @@ model {
         description 'Caffeine caching for event details'
       }
       email_bean = component 'EmailBean' {
-        description 'JavaMailSender (or MockemailSender)'
-      }
-      metrics = component 'NotificationMetrics' {
-        technology 'Micrometer'
-        description 'Counters'
+        description 'JavaMailSender | MockemailSender (mock default)'
       }
 
       notif_ctl -> notif_svc 'Delegates'
@@ -756,7 +730,6 @@ model {
         technology 'REST'
       }
       event_details -> cache_cfg 'Caches responses'
-      notif_svc -> metrics 'Increments counters'
     }
 
     au = component 'Audit Service' {
@@ -787,7 +760,7 @@ model {
         description 'POST /api/v1/user/emails'
       }
       kafka_cfg = component 'KafkaTopicConfig' {
-        description 'Declares audit.event'
+        description 'Declares audit.event (3 partitions)'
       }
 
       audit_ctl -> audit_svc 'Delegates'
@@ -833,7 +806,7 @@ model {
       }
       user_client = component 'UserServiceClient' {
         technology 'Feign client -> user-service'
-        description 'GET /api/v1/private/user/*'
+        description 'GET /api/v1/private/user/organization, /context'
       }
       kafka_cfg = component 'KafkaTopicConfig + KafkaConsumerConfig' {
         description '6-partition topics, DLT + retry'
@@ -888,10 +861,10 @@ model {
       technology 'PostgreSQL :5433'
     }
     audit_db = storage 'audit-db' {
-      technology 'PostgreSQL :5440'
+      technology 'PostgreSQL (no host port mapped)'
     }
     analytics_db = storage 'analytics-db' {
-      technology 'PostgreSQL :5441'
+      technology 'PostgreSQL (no host port mapped)'
     }
     redis = storage 'Redis' {
       technology 'Session cache, token store :6379'
@@ -1041,7 +1014,7 @@ model {
     }
 
     // ---------- Async (Kafka) ----------
-    gw -> kafka 'Publishes auth events' {
+    gw -> kafka 'Publishes user.*, accounts.generated, audit.event' {
       technology 'Kafka'
     }
     us -> kafka 'Publishes org.status.changed' {
